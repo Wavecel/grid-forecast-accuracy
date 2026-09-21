@@ -1,0 +1,139 @@
+# =============================================================================
+# HOURLY REFRESH -- the automation that makes this project "live"
+# =============================================================================
+# WHAT IT DOES, EVERY HOUR:
+#   1. Pull the last 10 days from EIA + Open-Meteo (revision-safe window)
+#   2. Rebuild the star schema with DuckDB SQL
+#   3. Run 12 data-quality checks -- a hard FAIL stops the job here
+#   4. Regenerate the website JSON
+#   5. Commit the curated data back to the repo
+#
+# Power BI then reads the committed files over HTTPS on its own schedule, and
+# GitHub Pages serves the website from the same commit. One pipeline, two
+# consumers, no server.
+#
+# COST: $0. GitHub Actions is unlimited for public repositories. This job runs
+# ~3 minutes, 24 times a day.
+# =============================================================================
+
+name: Hourly data refresh
+
+on:
+  schedule:
+    # 12 past every hour. Deliberately NOT ':00'.
+    # WHY: GitHub queues an enormous number of cron jobs at the top of the hour,
+    # and scheduled workflows are best-effort -- at peak times a :00 job can be
+    # delayed 10-20 minutes or dropped entirely. An off-peak minute measurably
+    # improves reliability, and it costs nothing to choose one.
+    - cron: '12 * * * *'
+  workflow_dispatch:        # manual "Run workflow" button, for testing
+    inputs:
+      backfill:
+        description: 'Run a FULL backfill instead of the incremental window'
+        type: boolean
+        default: false
+
+# Least privilege: this job writes commits, and nothing else.
+permissions:
+  contents: write
+
+# If a run is still going when the next hour fires, let the new one wait rather
+# than run concurrently -- two jobs committing to the same branch would collide.
+# cancel-in-progress: false because a half-finished ingest that gets killed
+# leaves the repo in a valid state (raw is append-only) but wastes the API calls.
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30      # a hung HTTP call must not burn a 6-hour default
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # We only need the tip to commit on top of it. A shallow clone is much
+          # faster once the repo has months of committed data history.
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip          # ~40s saved per run once the cache is warm
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ingest (incremental or backfill)
+        env:
+          # Never hard-code the key. Repo > Settings > Secrets and variables >
+          # Actions > New repository secret > name it EIA_API_KEY.
+          # Secrets are masked in logs even if something tries to print one.
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+        run: |
+          if [ "${{ inputs.backfill }}" = "true" ]; then
+            echo "::notice::Running FULL backfill"
+            python -m src.ingest --backfill
+          else
+            python -m src.ingest
+          fi
+
+      - name: Transform -- build the star schema
+        # --no-strict is NOT used: a hard data-quality failure must stop the
+        # pipeline before bad data reaches the dashboard. A stopped pipeline
+        # gets fixed; a broken one gets believed.
+        run: python -m src.transform
+
+      - name: Build website JSON
+        run: python -m src.build_web_data
+
+      - name: Summarise the run
+        # GITHUB_STEP_SUMMARY renders markdown on the run's page, so the outcome
+        # is visible without opening logs. Cheap, and it makes the Actions tab a
+        # genuine monitoring surface rather than a wall of text.
+        if: always()
+        run: |
+          echo "## Refresh summary" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 15 data/logs/run_log.csv >> $GITHUB_STEP_SUMMARY || echo "no run log" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ -f data/logs/freshness.json ]; then
+            echo "### Freshness" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat data/logs/freshness.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Commit refreshed data
+        run: |
+          git config user.name  "grid-forecast-bot"
+          git config user.email "actions@github.com"
+          git add data/raw data/curated data/logs web/data
+          # `git diff --staged --quiet` exits 0 when there is NOTHING staged.
+          # Without this guard the job fails on every quiet hour when EIA has
+          # published nothing new -- and a workflow that "fails" routinely is a
+          # workflow whose failures you stop reading.
+          if git diff --staged --quiet; then
+            echo "No data changes this run."
+          else
+            git commit -m "data: hourly refresh $(date -u '+%Y-%m-%d %H:%M UTC')"
+            # Rebase before pushing: a manual commit landing mid-run would
+            # otherwise reject the push and lose the hour's data.
+            git pull --rebase --autostash origin ${{ github.ref_name }}
+            git push
+          fi
+
+      - name: Flag failure loudly
+        if: failure()
+        run: |
+          echo "::error::Hourly refresh FAILED. Data is now stale."
+          echo "## Refresh FAILED" >> $GITHUB_STEP_SUMMARY
+          echo "The dashboard is serving the last good commit. Check the logs above." >> $GITHUB_STEP_SUMMARY
+        # GitHub emails the repo owner on the first failure of a scheduled
+        # workflow automatically -- that is the free monitoring answer to
+        # "how would you know if the pipeline broke?".

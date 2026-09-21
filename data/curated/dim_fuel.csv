@@ -1,0 +1,9 @@
+fuel_code,fuel_name,fuel_category,is_renewable,is_variable,fuel_sort
+SUN,Solar,Renewable,1,1,1
+WND,Wind,Renewable,1,1,2
+WAT,Hydro,Renewable,1,0,3
+NUC,Nuclear,Zero-carbon,0,0,4
+NG,Natural gas,Fossil,0,0,5
+COL,Coal,Fossil,0,0,6
+OIL,Petroleum,Fossil,0,0,7
+OTH,Other,Other,0,0,8

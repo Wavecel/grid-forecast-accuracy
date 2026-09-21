@@ -1,0 +1,76 @@
+# =============================================================================
+# DEPLOY THE PUBLIC DASHBOARD TO GITHUB PAGES
+# =============================================================================
+# Publishes the web/ folder to https://<user>.github.io/<repo>/
+#
+# ONE-TIME SETUP (do this before the first run, or the deploy step 404s):
+#   Repo > Settings > Pages > Build and deployment > Source = "GitHub Actions"
+#   NOT "Deploy from a branch" -- that is the older mechanism and ignores this
+#   workflow entirely.
+#
+# WHY A SEPARATE WORKFLOW FROM THE HOURLY REFRESH
+# -----------------------------------------------
+# Separation of concerns, and it genuinely pays off:
+#   * The refresh job's business is data. If a deploy fails, data still lands.
+#   * The deploy job's business is publishing. If EIA is down, the site still
+#     redeploys from the last good data.
+# Coupling them would mean one API hiccup takes the public site offline, which
+# is exactly the fragility this architecture is designed to avoid.
+#
+# COST: $0. Pages is free for public repositories.
+# =============================================================================
+
+name: Deploy dashboard to Pages
+
+on:
+  push:
+    branches: [main]
+    # Only redeploy when something the SITE renders has actually changed.
+    # Without this filter every hourly data commit triggers a deploy even when
+    # only data/raw changed -- 24 pointless deploys a day.
+    paths:
+      - 'web/**'
+      - '.github/workflows/deploy_pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write        # required by deploy-pages for OIDC attestation
+
+# Never cancel a deploy midway -- a half-published site is worse than a stale
+# one. But do skip queued deploys that a newer one supersedes.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Only web/ is published. data/raw and the DuckDB file stay in the
+          # repo (readable on GitHub) but are never served as part of the site,
+          # which keeps the deployed artifact small and fast.
+          path: 'web'
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Report URL
+        run: |
+          echo "## Dashboard deployed" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY

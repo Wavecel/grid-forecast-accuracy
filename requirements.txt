@@ -1,0 +1,11 @@
+# Runtime dependencies. Deliberately tiny -- four packages run the whole pipeline.
+#
+# Versions are pinned with >= (a floor, not a lock) because this is a portfolio
+# project that must still install cleanly in a year. A hard == pin would rot as
+# wheels age out; a floor keeps it reproducible enough while staying installable.
+# In a production system you would commit a lockfile instead.
+
+requests>=2.31.0      # HTTP for both APIs
+pandas>=2.1.0         # dataframes, plus the US federal holiday calendar
+pyarrow>=14.0.0       # Parquet read/write (pandas backend)
+duckdb>=0.10.0        # the SQL engine -- in-process, no server, no gateway

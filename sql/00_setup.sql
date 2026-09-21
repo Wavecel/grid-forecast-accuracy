@@ -1,0 +1,21 @@
+-- =========================================================================
+-- 00_setup.sql -- session configuration
+-- =========================================================================
+-- WHY SET TimeZone='UTC' IS THE MOST IMPORTANT LINE IN THIS PROJECT
+--
+-- DuckDB renders TIMESTAMPTZ values in the *session* timezone. On a laptop in
+-- Boston that means a UTC hour silently prints as an Eastern hour. Every
+-- comparison still works (TIMESTAMPTZ stores an absolute instant), but every
+-- human check -- and every CSV we export for Power BI -- would be shifted by
+-- 4 or 5 hours depending on the season.
+--
+-- Pinning the session to UTC means: raw is UTC, exports are UTC, and local time
+-- appears ONLY where we explicitly convert it with AT TIME ZONE. One source of
+-- truth, one explicit conversion point, no accidental double-shifts.
+--
+-- This is also the answer to "what is the hardest bug you have debugged in a
+-- data pipeline?" -- timezone drift is invisible in aggregates and catastrophic
+-- in hour-of-day analysis.
+-- =========================================================================
+
+SET TimeZone = 'UTC';

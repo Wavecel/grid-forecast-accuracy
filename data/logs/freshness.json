@@ -1,0 +1,14 @@
+{
+  "generated_utc": "2026-09-21T18:47:05+00:00",
+  "latest_actual_hour_utc": "2026-09-21 17:00:00+00",
+  "curated_row_counts": {
+    "dim_ba": 6,
+    "dim_date": 772,
+    "dim_hour": 24,
+    "dim_fuel": 8,
+    "fact_load_hour": 110016,
+    "fact_fuel_mix": 831445,
+    "agg_daily_brief": 4590,
+    "dq_checks": 12
+  }
+}

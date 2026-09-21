@@ -1,0 +1,7 @@
+ba_code,ba_name,market,timezone,peak_season,weather_city_count,weather_cities,ba_label,size_band,region
+CISO,California ISO,CAISO,America/Los_Angeles,Summer,5,"Los Angeles, CA, San Francisco, CA, San Diego, CA, Fresno, CA, Sacramento, CA",California ISO (CISO),Large (40-90 GW peak),West
+ERCO,ERCOT (Texas),ERCOT,America/Chicago,Summer,4,"Houston, TX, Dallas, TX, Austin, TX, San Antonio, TX",ERCOT (Texas) (ERCO),Large (40-90 GW peak),Texas
+ISNE,ISO New England,ISO-NE,America/New_York,Summer,5,"Boston, MA, Hartford, CT, Providence, RI, Manchester, NH, Portland, ME",ISO New England (ISNE),Mid-size (<40 GW peak),Northeast
+MISO,Midcontinent ISO,MISO,America/Chicago,Summer,6,"Detroit, MI, Minneapolis, MN, St. Louis, MO, Indianapolis, IN, New Orleans, LA, Des Moines, IA",Midcontinent ISO (MISO),Very large (>100 GW peak),Midcontinent
+NYIS,New York ISO,NYISO,America/New_York,Summer,5,"New York, NY, Buffalo, NY, Albany, NY, Rochester, NY, Syracuse, NY",New York ISO (NYIS),Mid-size (<40 GW peak),Northeast
+PJM,PJM Interconnection,PJM,America/New_York,Summer,6,"Chicago, IL, Philadelphia, PA, Washington, DC, Baltimore, MD, Pittsburgh, PA, Richmond, VA",PJM Interconnection (PJM),Very large (>100 GW peak),Mid-Atlantic / Midwest

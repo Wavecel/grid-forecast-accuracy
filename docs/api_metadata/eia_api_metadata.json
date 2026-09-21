@@ -1,0 +1,48 @@
+{
+  "probed_utc": "2026-09-21T18:01:42.675096+00:00",
+  "electricity/rto/region-data": {
+    "route": "electricity/rto/region-data",
+    "api_version": "2.1.14",
+    "description": "Hourly demand, day-ahead demand forecast, net generation, and interchange by balancing authority.  \n    Source: Form EIA-930\n    Product: Hourly Electric Grid Monitor",
+    "frequencies": [
+      "hourly",
+      "local-hourly"
+    ],
+    "facets": [
+      "respondent",
+      "type"
+    ],
+    "columns": [
+      null
+    ],
+    "start_period": "2019-01-01T00",
+    "end_period": "2026-09-22T07"
+  },
+  "electricity/rto/fuel-type-data": {
+    "route": "electricity/rto/fuel-type-data",
+    "api_version": "2.1.14",
+    "description": "Hourly net generation by balancing authority and energy source.  \n    Source: Form EIA-930\n    Product: Hourly Electric Grid Monitor",
+    "frequencies": [
+      "hourly",
+      "local-hourly"
+    ],
+    "facets": [
+      "respondent",
+      "fueltype"
+    ],
+    "columns": [
+      null
+    ],
+    "start_period": "2019-01-01T00",
+    "end_period": "2026-09-21T06"
+  },
+  "respondent_count": 83,
+  "our_bas_present": {
+    "PJM": true,
+    "MISO": true,
+    "ERCO": true,
+    "CISO": true,
+    "ISNE": true,
+    "NYIS": true
+  }
+}

@@ -1,0 +1,25 @@
+hour_of_day,hour_label,hour_range_label,day_period,day_period_sort,is_system_peak_window,is_solar_ramp_window,is_overnight_trough_window
+0,00:00,00:00-00:59,Overnight,1,0,0,0
+1,01:00,01:00-01:59,Overnight,1,0,0,0
+2,02:00,02:00-02:59,Overnight,1,0,0,1
+3,03:00,03:00-03:59,Overnight,1,0,0,1
+4,04:00,04:00-04:59,Overnight,1,0,0,1
+5,05:00,05:00-05:59,Overnight,1,0,0,1
+6,06:00,06:00-06:59,Morning ramp,2,0,0,0
+7,07:00,07:00-07:59,Morning ramp,2,0,0,0
+8,08:00,08:00-08:59,Morning ramp,2,0,0,0
+9,09:00,09:00-09:59,Morning ramp,2,0,0,0
+10,10:00,10:00-10:59,Midday,3,0,0,0
+11,11:00,11:00-11:59,Midday,3,0,0,0
+12,12:00,12:00-12:59,Midday,3,0,0,0
+13,13:00,13:00-13:59,Midday,3,0,0,0
+14,14:00,14:00-14:59,Midday,3,1,0,0
+15,15:00,15:00-15:59,Midday,3,1,0,0
+16,16:00,16:00-16:59,Evening peak,4,1,0,0
+17,17:00,17:00-17:59,Evening peak,4,1,1,0
+18,18:00,18:00-18:59,Evening peak,4,1,1,0
+19,19:00,19:00-19:59,Evening peak,4,1,1,0
+20,20:00,20:00-20:59,Evening peak,4,1,1,0
+21,21:00,21:00-21:59,Late evening,5,0,0,0
+22,22:00,22:00-22:59,Late evening,5,0,0,0
+23,23:00,23:00-23:59,Late evening,5,0,0,0

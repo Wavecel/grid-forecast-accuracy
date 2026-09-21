@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# Secrets -- the only truly non-negotiable entry in this file
+# ---------------------------------------------------------------------------
+.env
+*.key
+secrets.json
+
+# ---------------------------------------------------------------------------
+# Derived artefacts that can be rebuilt from raw
+# ---------------------------------------------------------------------------
+# The DuckDB file is a build output, not a source. It is rebuilt from scratch on
+# every transform run, it is large, and it changes entirely each time -- which
+# would make git history useless. Raw Parquet and curated CSV/Parquet ARE
+# committed, because those are what Power BI and the website read over HTTPS.
+data/warehouse.duckdb
+data/warehouse.duckdb.wal
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Power BI
+# ---------------------------------------------------------------------------
+# .pbix is a binary zip: git cannot diff it and every save rewrites the whole
+# file, so committing it bloats the repo fast. Commit the M and DAX source
+# instead -- those are the reviewable artefacts -- plus screenshots.
+# EXCEPTION: many reviewers want to open the actual report. If you commit one,
+# commit a single release copy (e.g. powerbi/GridForecastAccuracy.pbix) rather
+# than every working save, and use Git LFS if it exceeds ~50 MB.
+*.pbix.bak
+*.pbip.bak
+TempState/
+
+# ---------------------------------------------------------------------------
+# OS / editor noise
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Large curated CSV twins (fact_fuel_mix.csv ~52 MB, fact_load_hour.csv ~26 MB).
+# Committing them hourly would grow the repo by ~2 GB/day: git cannot delta-
+# compress whole-file rewrites of this size. Parquet is what Power BI consumes
+# and stays tracked; the small dim_*.csv files stay for quick inspection.
+data/curated/fact_*.csv
+data/curated/agg_*.csv
+.claude/

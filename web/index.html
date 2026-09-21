@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid Load Forecast Accuracy | Day-Ahead Forecast Performance Monitor</title>
+<meta name="description" content="Automated daily monitoring of US day-ahead electricity load forecast accuracy across six balancing authorities, with weather-driven root cause analysis.">
+
+<!-- Chart.js from a CDN with subresource integrity omitted deliberately:
+     jsDelivr serves an immutable, version-pinned URL, so the content cannot
+     change under us. Pinning the MAJOR AND MINOR version (not @latest) is the
+     part that matters -- @latest would let a breaking release silently take the
+     dashboard down at 3am with no commit to blame. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9889;</text></svg>">
+</head>
+<body>
+
+<div id="demoBanner" class="demo-banner" hidden>
+  <strong>DEMONSTRATION DATA.</strong>
+  Weather is real (Open-Meteo). Demand and forecast values are synthetic, generated for pipeline testing.
+  Run the backfill with a live EIA API key to replace them.
+</div>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <h1>&#9889; Grid Load Forecast Accuracy</h1>
+      <span class="sub">Day-ahead forecast performance &middot; 6 US balancing authorities</span>
+    </div>
+    <div class="freshness">
+      <span id="freshDot" class="dot"></span>
+      <span id="freshText">loading&hellip;</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-page="brief"    aria-selected="true">Daily Brief</button>
+    <button role="tab" data-page="accuracy" aria-selected="false">Forecast Accuracy</button>
+    <button role="tab" data-page="drivers"  aria-selected="false">Root Cause</button>
+    <button role="tab" data-page="outlook"  aria-selected="false">Forward Outlook</button>
+    <button role="tab" data-page="quality"  aria-selected="false">Data &amp; Pipeline</button>
+    <button role="tab" data-page="about"    aria-selected="false">How It Works</button>
+  </nav>
+
+  <div id="boot" class="loading">
+    <div class="spinner"></div>
+    Loading dashboard data&hellip;
+  </div>
+
+  <main id="app" hidden>
+
+    <!-- ================= DAILY BRIEF ================= -->
+    <section class="panel-page active" id="page-brief">
+      <div class="controls">
+        <label for="baSelect">Balancing authority</label>
+        <select id="baSelect"></select>
+        <label for="winSelect" style="margin-left:8px">Window</label>
+        <div class="seg" id="winSeg">
+          <button data-win="7"  class="on">7d</button>
+          <button data-win="30">30d</button>
+          <button data-win="90">90d</button>
+        </div>
+      </div>
+
+      <div class="kpis" id="briefKpis"></div>
+
+      <div class="card">
+        <h2>What changed, and why</h2>
+        <p class="hint">
+          Generated from the daily aggregate. Each day is compared against a trailing 28-day baseline
+          <em>of the same day type</em> &mdash; comparing a Monday to a Sunday would attribute a normal
+          weekday load rise to a forecast failure.
+        </p>
+        <div id="narratives"></div>
+      </div>
+
+      <div class="card">
+        <h2>Requires attention</h2>
+        <p class="hint">
+          Hours in the last 3 days whose absolute percentage error is 2+ standard deviations above that
+          balancing authority's own trailing 30-day error distribution. Ranked by severity, so the list
+          is a work queue rather than a wall of noise. A relative threshold is used on purpose: 3% error
+          is an alert for a normally-accurate operator and routine for a volatile one.
+        </p>
+        <div class="table-scroll"><table id="alertTable">
+          <thead><tr>
+            <th>Severity</th><th>BA</th><th>Local time</th><th class="num">Actual MW</th>
+            <th class="num">Forecast MW</th><th class="num">Error MW</th><th class="num">APE</th>
+            <th class="num">Z-score</th><th>Direction</th><th class="num">Temp &deg;F</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Actual vs day-ahead forecast</h2>
+          <p class="hint">Hourly, last 14 days. Divergence between the two lines is the money.</p>
+          <div class="chart-box"><canvas id="chartAvF"></canvas></div>
+        </div>
+        <div class="card">
+          <h2>Hourly forecast error</h2>
+          <p class="hint">
+            Positive = actual exceeded forecast (operator was <strong>short</strong> and had to buy).
+            Negative = operator was <strong>long</strong> and sold surplus back.
+          </p>
+          <div class="chart-box"><canvas id="chartErr"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ACCURACY ================= -->
+    <section class="panel-page" id="page-accuracy">
+      <div class="insight" id="accuracyInsight"></div>
+
+      <div class="card">
+        <h2>Daily MAPE trend by balancing authority</h2>
+        <p class="hint">
+          Mean absolute percentage error, one point per day. MAPE measures how <em>noisy</em> a forecast
+          is. Published day-ahead MAPE for large US operators typically sits in the 1.5&ndash;4% band.
+        </p>
+        <div class="chart-box tall"><canvas id="chartMapeTrend"></canvas></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Accuracy vs bias</h2>
+          <p class="hint">
+            The distinction that matters. <strong>MAPE</strong> (bar) is noise &mdash; largely
+            irreducible. <strong>Bias</strong> (line) is systematic direction, and it is the part a
+            forecasting team can actually fix. A high-MAPE, zero-bias forecast is doing its best;
+            a biased one is leaving money on the table every single day.
+          </p>
+          <div class="chart-box"><canvas id="chartMapeBias"></canvas></div>
+        </div>
+        <div class="card">
+          <h2>Overall vs peak-hour accuracy</h2>
+          <p class="hint">
+            Peak-hour accuracy is the number a capacity planner cares about. Capacity charges, reserve
+            procurement and scarcity pricing all settle at the peak &mdash; being right on average is no
+            comfort if you were wrong at the moment the system was most stressed.
+          </p>
+          <div class="chart-box"><canvas id="chartPeakVsAll"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Balancing authority scorecard</h2>
+        <p class="hint">Sorted by 30-day MAPE, worst first.</p>
+        <div class="table-scroll"><table id="scorecard">
+          <thead><tr>
+            <th>Balancing authority</th><th>Region</th><th>Size</th>
+            <th class="num">MAPE 7d</th><th class="num">MAPE 30d</th><th class="num">MAPE all</th>
+            <th class="num">Bias 30d</th><th class="num">Peak-hr MAPE</th>
+            <th class="num">Avg load MW</th><th class="num">Material misses</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ================= ROOT CAUSE ================= -->
+    <section class="panel-page" id="page-drivers">
+      <div class="insight" id="driverInsight"></div>
+
+      <div class="card">
+        <h2>Forecast bias vs cooling demand</h2>
+        <p class="hint">
+          The analytical centrepiece. Hours are bucketed by cooling degree hours (temperature above the
+          65&deg;F baseline at which neither heating nor cooling is triggered). If the bars stayed near
+          zero across all buckets the forecast would be unbiased. They do not &mdash; and that asymmetry
+          is a fixable modelling gap, not bad luck.
+        </p>
+        <div class="chart-box tall"><canvas id="chartCdhBias"></canvas></div>
+        <div class="legend">
+          <span><i class="swatch" style="background:#f43f5e"></i> Under-forecast (short)</span>
+          <span><i class="swatch" style="background:#60a5fa"></i> Over-forecast (long)</span>
+          <span><i class="swatch" style="background:#fbbf24"></i> MAPE</span>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Error profile by hour of day</h2>
+          <p class="hint">
+            Local time, so all six operators are comparable despite spanning four time zones. This is the
+            <em>when</em>: if error concentrates in a specific window, that window is a targetable fix.
+          </p>
+          <div class="chart-box"><canvas id="chartHourProfile"></canvas></div>
+        </div>
+        <div class="card">
+          <h2>Load vs temperature response</h2>
+          <p class="hint">
+            The characteristic U-shape: demand rises with heating below ~55&deg;F and with cooling above
+            ~70&deg;F. The steepness of the right-hand arm is why hot-day forecasting is hard &mdash; a
+            2&deg;F miss costs far more megawatts at 95&deg;F than at 70&deg;F.
+          </p>
+          <div class="chart-box"><canvas id="chartScatter"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Error concentration by day type</h2>
+        <p class="hint">
+          Holidays are structurally hard: load behaves like a Sunday even on a Tuesday, and a model has
+          only ~10 examples per year to learn the pattern from.
+        </p>
+        <div class="chart-box short"><canvas id="chartDayType"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ================= OUTLOOK ================= -->
+    <section class="panel-page" id="page-outlook">
+      <div class="insight">
+        <h3>Why this page can exist at all</h3>
+        <p>
+          The three data horizons are different lengths: actual demand publishes to about an hour ago,
+          the day-ahead forecast reaches roughly 24&ndash;36 hours out, and the weather model reaches 72.
+          Joining them with an <code>INNER JOIN</code> would keep only the overlap and silently discard
+          the forward weather. A <code>FULL OUTER JOIN</code> plus an explicit row-type label keeps it,
+          which turns a report about the past into a warning about tomorrow.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>72-hour temperature outlook vs recent 30-day maximum</h2>
+        <p class="hint">
+          Bars above the zero line are hours forecast to be hotter than anything the system has been
+          tested against in the last 30 days &mdash; conditions where the load model is extrapolating
+          rather than interpolating, and where under-forecasting is historically worst.
+        </p>
+        <div class="chart-box tall"><canvas id="chartOutlook"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h2>Forward risk summary</h2>
+        <div class="table-scroll"><table id="outlookTable">
+          <thead><tr>
+            <th>BA</th><th>Date</th><th class="num">Max temp &deg;F</th>
+            <th class="num">vs 30d max</th><th class="num">Cooling degree hrs</th>
+            <th class="num">Peak forecast MW</th><th>Risk</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ================= DATA QUALITY ================= -->
+    <section class="panel-page" id="page-quality">
+      <div class="insight">
+        <h3>Why a dashboard should show its own data quality</h3>
+        <p>
+          Every number above depends on assumptions that can silently break: an API can change its
+          schema, a weather station can drop out, a refresh can fail at 3am. Publishing the checks
+          alongside the results means a viewer never has to take the data on faith &mdash; and it
+          answers the first question any competent reviewer asks, which is
+          &ldquo;how would you know if this were wrong?&rdquo;
+        </p>
+      </div>
+
+      <div class="kpis" id="dqKpis"></div>
+
+      <div class="card">
+        <h2>Automated data quality checks</h2>
+        <p class="hint">
+          Run on every refresh. A <code>FAIL</code> severity stops the build before bad data can reach
+          the dashboard &mdash; a stopped pipeline gets fixed, whereas a broken one gets believed.
+        </p>
+        <div class="table-scroll"><table id="dqTable">
+          <thead><tr>
+            <th>Result</th><th>Check</th><th>Severity</th>
+            <th class="num">Observed</th><th class="num">Threshold</th><th>What it guards</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Coverage by balancing authority</h2>
+          <p class="hint">Gradeable hours held per operator. Gaps here would bias any cross-BA comparison.</p>
+          <div class="chart-box"><canvas id="chartCoverage"></canvas></div>
+        </div>
+        <div class="card">
+          <h2>Pipeline metadata</h2>
+          <p class="hint">Written by the ingest job on every run.</p>
+          <div class="table-scroll"><table id="metaTable"><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ABOUT ================= -->
+    <section class="panel-page" id="page-about">
+      <div class="card">
+        <h2>The business problem</h2>
+        <p class="hint" style="font-size:13.5px;line-height:1.7;color:var(--text-dim)">
+          Every US balancing authority publishes a day-ahead forecast of how much electricity its
+          region will need, then buys power against it. When the forecast is too low the operator is
+          short and must buy the shortfall on the real-time market, usually at a higher price. When it
+          is too high the operator is long and sells the surplus back, often at a loss. Both directions
+          cost money, and at 100 GW scale a 1% error is roughly 1,000 MW.
+          <br><br>
+          This dashboard grades those forecasts against what actually happened, then uses weather data
+          to explain <em>why</em> they missed &mdash; separating irreducible noise from systematic,
+          fixable bias.
+        </p>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Data sources</h2>
+          <table><tbody>
+            <tr><td><strong>EIA API v2</strong><br><span class="hint">Hourly demand, day-ahead forecast, generation, interchange</span></td><td class="num">Free, hourly</td></tr>
+            <tr><td><strong>Open-Meteo</strong><br><span class="hint">Hourly temperature and humidity, ERA5 archive plus live forecast</span></td><td class="num">Free, no key</td></tr>
+          </tbody></table>
+          <p class="hint" style="margin-top:12px">
+            The pairing is what makes the project possible: EIA is one of very few free sources that
+            publishes both a <em>prediction</em> and the <em>outcome</em> it was predicting.
+          </p>
+        </div>
+        <div class="card">
+          <h2>Architecture</h2>
+          <table><tbody>
+            <tr><td>Orchestration</td><td class="num">GitHub Actions (hourly cron)</td></tr>
+            <tr><td>Raw storage</td><td class="num">Partitioned Parquet, immutable</td></tr>
+            <tr><td>Transformation</td><td class="num">DuckDB SQL &rarr; star schema</td></tr>
+            <tr><td>Semantic model</td><td class="num">Power BI, Import mode</td></tr>
+            <tr><td>Public site</td><td class="num">GitHub Pages, static JSON</td></tr>
+            <tr><td><strong>Running cost</strong></td><td class="num"><strong>$0 / month</strong></td></tr>
+          </tbody></table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Metric definitions</h2>
+        <div class="table-scroll"><table><thead><tr><th>Metric</th><th>Formula</th><th>What it tells you</th></tr></thead>
+        <tbody>
+          <tr><td>Forecast error</td><td class="mono">actual &minus; forecast</td><td>Positive = operator was short</td></tr>
+          <tr><td>APE</td><td class="mono">|actual &minus; forecast| / actual</td><td>Size of one hour's miss</td></tr>
+          <tr><td>MAPE</td><td class="mono">mean(APE)</td><td>Noise. Largely irreducible</td></tr>
+          <tr><td>Bias</td><td class="mono">mean((actual &minus; forecast) / actual)</td><td>Systematic direction. Fixable</td></tr>
+          <tr><td>Cooling degree hours</td><td class="mono">max(temp&deg;F &minus; 65, 0)</td><td>Air-conditioning demand driver</td></tr>
+          <tr><td>Heating degree hours</td><td class="mono">max(65 &minus; temp&deg;F, 0)</td><td>Heating demand driver</td></tr>
+          <tr><td>Ramp</td><td class="mono">demand(h) &minus; demand(h&minus;1)</td><td>How fast supply must change</td></tr>
+          <tr><td>APE z-score</td><td class="mono">(APE &minus; &mu;<sub>30d</sub>) / &sigma;<sub>30d</sub></td><td>Anomaly, relative to that BA's own norm</td></tr>
+        </tbody></table></div>
+      </div>
+
+      <div class="card">
+        <h2>Known limitations</h2>
+        <p class="hint" style="font-size:13px;line-height:1.75">
+          <strong>Weather is a proxy.</strong> Each balancing authority is represented by a
+          population-weighted blend of 4&ndash;6 major cities, not its true load-weighted weather. That
+          understates variation in geographically sprawling footprints, MISO especially.<br>
+          <strong>Correlation, not causation.</strong> A relationship between temperature and forecast
+          error at hourly grain is suggestive. It does not establish that temperature modelling is the
+          cause, and the wording throughout is hedged accordingly.<br>
+          <strong>Revisions.</strong> EIA revises recent hours. The pipeline re-pulls a 10-day window on
+          every run and upserts, so recent figures can move slightly after first publication.<br>
+          <strong>No cost data.</strong> Real imbalance settlement prices are not free. Any dollar figure
+          shown is an explicit user-set scenario assumption, never a measured result.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <strong>Grid Load Forecast Accuracy</strong> &mdash; automated portfolio analytics project.
+    Data: <a href="https://www.eia.gov/opendata/" target="_blank" rel="noopener">US EIA Open Data</a> (public domain)
+    and <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0).
+    Refreshed hourly by GitHub Actions. Not affiliated with any balancing authority or system operator.
+    <div id="footMeta" class="mono" style="margin-top:8px;color:var(--text-faint)"></div>
+  </footer>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

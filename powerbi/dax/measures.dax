@@ -1,0 +1,546 @@
+// =============================================================================
+// GRID LOAD FORECAST ACCURACY -- DAX MEASURE LIBRARY
+// =============================================================================
+// Paste these into Power BI Desktop one at a time (Modeling > New Measure), or
+// use Tabular Editor's "Advanced Scripting" to bulk-create them.
+//
+// ORGANISE THEM INTO DISPLAY FOLDERS as marked. A model with 45 loose measures
+// is unusable; the same 45 in seven folders is navigable. Set the folder in the
+// Properties pane after creating each measure.
+//
+// -----------------------------------------------------------------------------
+// THE ONE RULE THAT GOVERNS THIS WHOLE FILE
+// -----------------------------------------------------------------------------
+// fact_load_hour contains three kinds of row:
+//     'actual'         actual demand published -- gradeable
+//     'forecast_only'  forecast exists, actual not published yet
+//     'weather_only'   forward weather outlook only
+//
+// EVERY error measure must filter to row_kind = "actual". Forget it once and
+// your MAPE silently dilutes toward zero as future rows (which have no error)
+// enter the denominator. It will not error. It will just be wrong, and it will
+// look plausible. This is the single most likely way to break this model.
+//
+// -----------------------------------------------------------------------------
+// WHY DIVIDE() AND NOT "/"
+// -----------------------------------------------------------------------------
+// DIVIDE() returns BLANK on divide-by-zero instead of an error, and BLANK is
+// what you want in a visual -- it renders as an empty cell rather than breaking
+// the whole visual with "Infinity". Use it everywhere.
+// =============================================================================
+
+
+// =============================================================================
+// FOLDER: 00 Base
+// =============================================================================
+
+// The gradeable population. Every error measure funnels through this idea, so
+// naming it once makes the intent explicit and the filter impossible to forget.
+Gradeable Hours =
+CALCULATE(
+    COUNTROWS( fact_load_hour ),
+    fact_load_hour[row_kind] = "actual",
+    NOT ISBLANK( fact_load_hour[ape] )
+)
+
+Total Demand MWh =
+SUM( fact_load_hour[demand_mw] )
+// Each row is one hour, so a megawatt reading for one hour IS one megawatt-hour.
+// The unit conversion is free only because the grain is hourly -- if you ever
+// move to 5-minute data this becomes SUM(mw) / 12.
+
+Avg Demand MW =
+AVERAGE( fact_load_hour[demand_mw] )
+
+Peak Demand MW =
+MAX( fact_load_hour[demand_mw] )
+
+Avg Forecast MW =
+AVERAGE( fact_load_hour[forecast_mw] )
+
+Min Demand MW =
+MIN( fact_load_hour[demand_mw] )
+
+// Peak-to-trough spread within the current filter context. The operational
+// meaning: how much generation must be started and stopped across the day.
+Peak to Trough MW =
+[Peak Demand MW] - [Min Demand MW]
+
+
+// =============================================================================
+// FOLDER: 01 Forecast Accuracy   <-- the core of the model
+// =============================================================================
+
+// MAPE -- Mean Absolute Percentage Error.
+//
+// BUSINESS MEANING: the average size of an hourly miss, as a percentage of
+// actual load. It answers "how noisy is this forecast?".
+//
+// CRITICAL DETAIL: this is the MEAN OF RATIOS, not the RATIO OF SUMS.
+//     mean of ratios  = AVERAGE(ape)                    <- what we do
+//     ratio of sums   = SUM(abs_error) / SUM(demand)    <- a different number
+// The industry convention is the mean of ratios, because it weights every hour
+// equally. The ratio of sums lets high-load hours dominate, which understates
+// error in overnight hours. Both are defensible; using one while calling it the
+// other is not. Be ready to say which you used and why.
+//
+// ACTION IT TRIGGERS: sustained MAPE above the BA's own norm opens a forecast
+// model review.
+MAPE =
+CALCULATE(
+    AVERAGE( fact_load_hour[ape] ),
+    fact_load_hour[row_kind] = "actual"
+)
+
+// The alternative definition, provided so the two can be compared on one visual.
+// Showing that you know they differ is worth more than picking either.
+MAPE (Load Weighted) =
+VAR AbsErr =
+    CALCULATE( SUM( fact_load_hour[abs_error_mw] ), fact_load_hour[row_kind] = "actual" )
+VAR Actual =
+    CALCULATE( SUM( fact_load_hour[demand_mw] ), fact_load_hour[row_kind] = "actual" )
+RETURN
+    DIVIDE( AbsErr, Actual )
+
+// FORECAST BIAS -- the signed, systematic component.
+//
+// THIS IS THE MOST IMPORTANT MEASURE IN THE MODEL, and the one that separates
+// analysis from reporting:
+//     MAPE  tells you the forecast is noisy. Mostly irreducible.
+//     BIAS  tells you it is systematically wrong IN A DIRECTION. Fixable.
+// A forecast with 3% MAPE and 0% bias is doing its job. One with 3% MAPE and
+// +2% bias is leaving money on the table every single day, in the same
+// direction, and can be improved by recalibration alone.
+//
+// SIGN: positive = actual exceeded forecast = the operator UNDER-forecast and
+// was SHORT (had to buy on the real-time market, usually at a premium).
+//
+// ACTION: persistent bias beyond +/-1% is a recalibration ticket, not a
+// "monitor it" item.
+Forecast Bias =
+CALCULATE(
+    AVERAGE( fact_load_hour[signed_pe] ),
+    fact_load_hour[row_kind] = "actual"
+)
+
+Forecast Bias MW =
+CALCULATE(
+    AVERAGE( fact_load_hour[forecast_error_mw] ),
+    fact_load_hour[row_kind] = "actual"
+)
+
+Total Absolute Error MWh =
+CALCULATE(
+    SUM( fact_load_hour[abs_error_mw] ),
+    fact_load_hour[row_kind] = "actual"
+)
+
+// PEAK-HOUR MAPE -- accuracy at the moment the system is most stressed.
+//
+// WHY IT DESERVES ITS OWN MEASURE: capacity charges, reserve procurement and
+// scarcity pricing all settle at the peak. A forecast that is excellent on
+// average and poor at the peak is, commercially, a poor forecast. Reporting
+// only the average hides exactly the failure that costs the most.
+Peak Hour MAPE =
+CALCULATE(
+    AVERAGE( fact_load_hour[ape] ),
+    fact_load_hour[row_kind] = "actual",
+    fact_load_hour[is_daily_peak_hour] = 1
+)
+
+Peak Hour Bias =
+CALCULATE(
+    AVERAGE( fact_load_hour[signed_pe] ),
+    fact_load_hour[row_kind] = "actual",
+    fact_load_hour[is_daily_peak_hour] = 1
+)
+
+// The gap between peak-hour and all-hours accuracy. Positive means the forecast
+// degrades precisely when it matters most -- a finding worth a callout card.
+Peak Hour MAPE Gap =
+[Peak Hour MAPE] - [MAPE]
+
+Material Miss Hours =
+CALCULATE(
+    SUM( fact_load_hour[is_material_miss] ),
+    fact_load_hour[row_kind] = "actual"
+)
+
+Material Miss Rate =
+DIVIDE( [Material Miss Hours], [Gradeable Hours] )
+
+Worst Hour APE =
+CALCULATE(
+    MAX( fact_load_hour[ape] ),
+    fact_load_hour[row_kind] = "actual"
+)
+
+// Forecast Skill -- how much better the day-ahead forecast is than a naive
+// "same hour last week" persistence forecast. Standard in forecasting practice,
+// and the honest way to answer "is this forecast actually any good?".
+//   1.0  = perfect          0 = no better than naive        < 0 = worse than naive
+// A forecast that cannot beat persistence is not adding value, no matter how
+// good its MAPE looks in isolation.
+Naive MAPE (Persistence) =
+VAR Naive =
+    CALCULATE(
+        AVERAGEX(
+            FILTER( fact_load_hour, fact_load_hour[row_kind] = "actual" ),
+            VAR ThisBA   = fact_load_hour[ba_code]
+            VAR LastWeek = fact_load_hour[period_utc] - 7
+            VAR PriorVal =
+                CALCULATE(
+                    MAX( fact_load_hour[demand_mw] ),
+                    ALL( fact_load_hour ),
+                    fact_load_hour[ba_code]    = ThisBA,
+                    fact_load_hour[period_utc] = LastWeek
+                )
+            RETURN
+                DIVIDE( ABS( fact_load_hour[demand_mw] - PriorVal ), fact_load_hour[demand_mw] )
+        )
+    )
+RETURN
+    Naive
+
+Forecast Skill Score =
+DIVIDE( [Naive MAPE (Persistence)] - [MAPE], [Naive MAPE (Persistence)] )
+
+
+// =============================================================================
+// FOLDER: 02 Time Intelligence
+// =============================================================================
+// All of these require dim_date to be marked as a Date Table
+// (Table tools > Mark as date table > date_key). Without that, DAX cannot
+// safely shift the filter context and these silently return wrong values.
+
+MAPE LY =
+CALCULATE( [MAPE], SAMEPERIODLASTYEAR( dim_date[date_key] ) )
+
+MAPE YoY =
+[MAPE] - [MAPE LY]
+
+MAPE YoY % =
+DIVIDE( [MAPE] - [MAPE LY], [MAPE LY] )
+
+MAPE PM =
+CALCULATE( [MAPE], PREVIOUSMONTH( dim_date[date_key] ) )
+
+MAPE MoM % =
+DIVIDE( [MAPE] - [MAPE PM], [MAPE PM] )
+
+// 7-day rolling MAPE. Smooths single-day noise so a trend is visible.
+//
+// NOTE the MAX(date_key) rather than LASTDATE: it returns a scalar, which keeps
+// DATESINPERIOD cheap. Using LASTDATE here works too but returns a table, and
+// on a 110k-row model the difference in a line chart with 400 points is
+// noticeable.
+MAPE 7D Rolling =
+CALCULATE(
+    [MAPE],
+    DATESINPERIOD( dim_date[date_key], MAX( dim_date[date_key] ), -7, DAY )
+)
+
+MAPE 30D Rolling =
+CALCULATE(
+    [MAPE],
+    DATESINPERIOD( dim_date[date_key], MAX( dim_date[date_key] ), -30, DAY )
+)
+
+Bias 30D Rolling =
+CALCULATE(
+    [Forecast Bias],
+    DATESINPERIOD( dim_date[date_key], MAX( dim_date[date_key] ), -30, DAY )
+)
+
+// Trailing 28-day baseline EXCLUDING the current day.
+//
+// The exclusion is the whole point. If today were included in its own baseline,
+// an extreme day would inflate the benchmark it is being judged against and
+// partly conceal itself. That is data leakage -- the same principle as the
+// SQL window frame in 04_fact_load_hour.sql, applied in DAX.
+MAPE Baseline 28D =
+VAR CurrentDay = MAX( dim_date[date_key] )
+RETURN
+    CALCULATE(
+        [MAPE],
+        DATESINPERIOD( dim_date[date_key], CurrentDay - 1, -28, DAY )
+    )
+
+MAPE vs Baseline % =
+DIVIDE( [MAPE] - [MAPE Baseline 28D], [MAPE Baseline 28D] )
+
+Peak Demand LY =
+CALCULATE( [Peak Demand MW], SAMEPERIODLASTYEAR( dim_date[date_key] ) )
+
+Peak Demand YoY % =
+DIVIDE( [Peak Demand MW] - [Peak Demand LY], [Peak Demand LY] )
+
+Demand YTD MWh =
+TOTALYTD( [Total Demand MWh], dim_date[date_key] )
+
+
+// =============================================================================
+// FOLDER: 03 Weather Response
+// =============================================================================
+
+Avg Temp F =
+AVERAGE( fact_load_hour[temp_f] )
+
+Total CDH =
+SUM( fact_load_hour[cooling_degree_hours] )
+
+Total HDH =
+SUM( fact_load_hour[heating_degree_hours] )
+
+// COOLING SENSITIVITY -- megawatts of extra load per cooling degree hour.
+//
+// This is a least-squares slope computed entirely in DAX. It is the single most
+// analytically substantial measure in the model, and a genuine talking point:
+// it demonstrates that DAX can express real statistics, not just SUM and COUNT.
+//
+// Formula:  slope = ( n*Sxy - Sx*Sy ) / ( n*Sxx - Sx^2 )
+//
+// BUSINESS MEANING: "every additional cooling degree hour adds N MW of load."
+// A planner uses it to translate a weather forecast into a capacity requirement.
+// If measured sensitivity is materially above what the forecast model assumes,
+// that gap IS the under-forecasting mechanism.
+Cooling Sensitivity MW per CDH =
+VAR T =
+    FILTER(
+        fact_load_hour,
+        fact_load_hour[row_kind] = "actual"
+            && NOT ISBLANK( fact_load_hour[cooling_degree_hours] )
+            && NOT ISBLANK( fact_load_hour[demand_mw] )
+            && fact_load_hour[cooling_degree_hours] > 0
+    )
+VAR N   = COUNTROWS( T )
+VAR Sx  = SUMX( T, fact_load_hour[cooling_degree_hours] )
+VAR Sy  = SUMX( T, fact_load_hour[demand_mw] )
+VAR Sxy = SUMX( T, fact_load_hour[cooling_degree_hours] * fact_load_hour[demand_mw] )
+VAR Sxx = SUMX( T, fact_load_hour[cooling_degree_hours] ^ 2 )
+RETURN
+    IF( N > 30, DIVIDE( N * Sxy - Sx * Sy, N * Sxx - Sx * Sx ) )
+    // The N > 30 guard is not decoration. A slope fitted to eight points is
+    // noise wearing a number's clothing, and a dashboard that displays it will
+    // be believed. Refusing to compute is the honest output.
+
+Heating Sensitivity MW per HDH =
+VAR T =
+    FILTER(
+        fact_load_hour,
+        fact_load_hour[row_kind] = "actual"
+            && fact_load_hour[heating_degree_hours] > 0
+            && NOT ISBLANK( fact_load_hour[demand_mw] )
+    )
+VAR N   = COUNTROWS( T )
+VAR Sx  = SUMX( T, fact_load_hour[heating_degree_hours] )
+VAR Sy  = SUMX( T, fact_load_hour[demand_mw] )
+VAR Sxy = SUMX( T, fact_load_hour[heating_degree_hours] * fact_load_hour[demand_mw] )
+VAR Sxx = SUMX( T, fact_load_hour[heating_degree_hours] ^ 2 )
+RETURN
+    IF( N > 30, DIVIDE( N * Sxy - Sx * Sy, N * Sxx - Sx * Sx ) )
+
+// Correlation between temperature and forecast error. If this is materially
+// non-zero, the forecast has an unexploited weather signal in its residuals --
+// which is the technical statement of "it is not modelling heat properly".
+Error Temp Correlation =
+VAR T =
+    FILTER(
+        fact_load_hour,
+        fact_load_hour[row_kind] = "actual"
+            && NOT ISBLANK( fact_load_hour[temp_f] )
+            && NOT ISBLANK( fact_load_hour[forecast_error_mw] )
+    )
+VAR N    = COUNTROWS( T )
+VAR Sx   = SUMX( T, fact_load_hour[temp_f] )
+VAR Sy   = SUMX( T, fact_load_hour[forecast_error_mw] )
+VAR Sxy  = SUMX( T, fact_load_hour[temp_f] * fact_load_hour[forecast_error_mw] )
+VAR Sxx  = SUMX( T, fact_load_hour[temp_f] ^ 2 )
+VAR Syy  = SUMX( T, fact_load_hour[forecast_error_mw] ^ 2 )
+RETURN
+    IF(
+        N > 30,
+        DIVIDE(
+            N * Sxy - Sx * Sy,
+            SQRT( ( N * Sxx - Sx * Sx ) * ( N * Syy - Sy * Sy ) )
+        )
+    )
+
+Max Abs Ramp MW =
+CALCULATE( MAX( ABS( fact_load_hour[ramp_mw] ) ), fact_load_hour[row_kind] = "actual" )
+
+
+// =============================================================================
+// FOLDER: 04 Anomaly & Alerting
+// =============================================================================
+
+Max APE Z Score =
+CALCULATE( MAX( fact_load_hour[ape_zscore] ), fact_load_hour[row_kind] = "actual" )
+
+Anomaly Hours 2sigma =
+CALCULATE(
+    COUNTROWS( fact_load_hour ),
+    fact_load_hour[row_kind] = "actual",
+    fact_load_hour[ape_zscore] >= 2
+)
+
+Anomaly Hours 3sigma =
+CALCULATE(
+    COUNTROWS( fact_load_hour ),
+    fact_load_hour[row_kind] = "actual",
+    fact_load_hour[ape_zscore] >= 3
+)
+
+// Traffic-light status, thresholded on the RATIO to each BA's own baseline
+// rather than on an absolute MAPE.
+//
+// WHY RELATIVE: 3% MAPE is excellent for ISO-NE (small, weather-whippy) and
+// mediocre for PJM (large, diversified). A single absolute threshold would
+// permanently red-flag the small operators and permanently green-light the
+// large ones, and users would correctly stop trusting the colour.
+Forecast Status =
+VAR Ratio = DIVIDE( [MAPE], [MAPE Baseline 28D] )
+RETURN
+    SWITCH(
+        TRUE(),
+        ISBLANK( [MAPE] ),          "No data",
+        ISBLANK( [MAPE Baseline 28D] ), "Insufficient history",
+        Ratio > 1.75,               "Attention",
+        Ratio > 1.25,               "Watch",
+        "Normal"
+    )
+
+// Numeric companion for conditional formatting (Format by > Field value needs
+// a number or a hex string, not a label).
+Forecast Status Color =
+SWITCH(
+    [Forecast Status],
+    "Attention",  "#F43F5E",
+    "Watch",      "#F59E0B",
+    "Normal",     "#34D399",
+    "#5C6F80"
+)
+
+// Direction of the current miss, in plain language for a card visual.
+Bias Direction =
+VAR B = [Forecast Bias]
+RETURN
+    SWITCH(
+        TRUE(),
+        ISBLANK( B ),      "No data",
+        B > 0.01,          "Under-forecasting -- systematically short",
+        B < -0.01,         "Over-forecasting -- systematically long",
+        "Balanced -- no material bias"
+    )
+
+
+// =============================================================================
+// FOLDER: 05 What-If Scenario
+// =============================================================================
+// SETUP: Modeling > New parameter > Numeric range
+//   Name: Imbalance Cost   Min: 0   Max: 200   Increment: 5   Default: 40
+// That creates a table 'Imbalance Cost' with a column [Imbalance Cost] and a
+// measure [Imbalance Cost Value].
+//
+// -----------------------------------------------------------------------------
+// READ THIS BEFORE PUTTING A DOLLAR FIGURE ON A DASHBOARD
+// -----------------------------------------------------------------------------
+// Real imbalance settlement prices are NOT free data. This measure is therefore
+// a SCENARIO, driven by a number the user chooses -- not a measured saving.
+//
+// Label the visual "Illustrative scenario -- assumes $X/MWh" and never state it
+// as a result. In an interview, volunteering this limitation before being asked
+// reads as integrity; being caught presenting an assumption as a finding does
+// the opposite. The same rule applies to the resume bullets.
+// -----------------------------------------------------------------------------
+
+Scenario Imbalance Cost =
+[Total Absolute Error MWh] * SELECTEDVALUE( 'Imbalance Cost'[Imbalance Cost], 40 )
+
+// Value of removing ONLY the systematic component, holding noise constant.
+// This is the defensible half of the scenario: bias is the fixable part, so the
+// cost attributable to bias is the realistic prize from recalibration.
+Scenario Bias Cost =
+VAR BiasMW = ABS( [Forecast Bias MW] )
+VAR Hours  = [Gradeable Hours]
+RETURN
+    BiasMW * Hours * SELECTEDVALUE( 'Imbalance Cost'[Imbalance Cost], 40 )
+
+Scenario Cost per GWh Served =
+DIVIDE( [Scenario Imbalance Cost], DIVIDE( [Total Demand MWh], 1000 ) )
+
+
+// =============================================================================
+// FOLDER: 06 Dynamic Titles & Labels
+// =============================================================================
+// Apply with: select visual > Title > fx > Format by "Field value" > pick these.
+// A title that states the current filter is not decoration -- it is what makes
+// an exported screenshot self-describing. Screenshots outlive their filters.
+
+Title Accuracy =
+VAR BA   = SELECTEDVALUE( dim_ba[ba_name], "all balancing authorities" )
+VAR Days = COUNTROWS( VALUES( dim_date[date_key] ) )
+RETURN
+    "Day-ahead forecast accuracy -- " & BA & " -- last " & Days & " days"
+
+Title Status Banner =
+VAR BA = SELECTEDVALUE( dim_ba[ba_name], "Portfolio" )
+RETURN
+    BA & ": " & [Forecast Status] & "  (MAPE " & FORMAT( [MAPE], "0.00%" ) &
+    " vs " & FORMAT( [MAPE Baseline 28D], "0.00%" ) & " baseline)"
+
+// The generated narrative, surfaced as a card. Because agg_daily_brief is at
+// day grain, SELECTEDVALUE returns the sentence when exactly one BA-day is in
+// context and a helpful prompt otherwise -- rather than a silent blank, which
+// users read as a bug.
+Daily Narrative =
+IF(
+    HASONEVALUE( agg_daily_brief[daily_narrative] ),
+    SELECTEDVALUE( agg_daily_brief[daily_narrative] ),
+    "Select a single balancing authority and date to see the generated brief."
+)
+
+Data Freshness Label =
+VAR LatestHour =
+    CALCULATE( MAX( fact_load_hour[period_utc] ), fact_load_hour[row_kind] = "actual", ALL( fact_load_hour ) )
+VAR HoursBehind = DATEDIFF( LatestHour, UTCNOW(), HOUR )
+RETURN
+    "Actuals through " & FORMAT( LatestHour, "yyyy-mm-dd hh:nn" ) & " UTC (" &
+    HoursBehind & "h ago)"
+
+// Honest empty-state text. A blank visual makes users think the report is
+// broken; an explicit sentence tells them nothing is wrong and what to do.
+No Data Message =
+IF(
+    ISBLANK( [Gradeable Hours] ),
+    "No gradeable hours in the current selection. Widen the date range or clear the row-type filter.",
+    BLANK()
+)
+
+
+// =============================================================================
+// FOLDER: 07 Field Parameter support
+// =============================================================================
+// SETUP: Modeling > New parameter > Fields. Add MAPE, Forecast Bias,
+// Peak Hour MAPE, Material Miss Rate, Avg Demand MW.
+//
+// WHY THIS EARNS ITS PLACE: it lets one chart answer four questions instead of
+// requiring four charts. The page stays legible, and the user drives it. That
+// is a real usability gain -- unlike features added only to look advanced,
+// which is the trap this project deliberately avoids.
+//
+// Then this measure formats the selected metric correctly regardless of which
+// one is chosen -- percentages and megawatts need different formats, and a
+// single format string cannot serve both.
+Selected Metric Formatted =
+VAR M = SELECTEDVALUE( 'Metric Parameter'[Metric Order], 0 )
+RETURN
+    SWITCH(
+        M,
+        0, FORMAT( [MAPE], "0.00%" ),
+        1, FORMAT( [Forecast Bias], "+0.00%;-0.00%" ),
+        2, FORMAT( [Peak Hour MAPE], "0.00%" ),
+        3, FORMAT( [Material Miss Rate], "0.0%" ),
+        4, FORMAT( [Avg Demand MW], "#,##0" & " MW" ),
+        BLANK()
+    )
