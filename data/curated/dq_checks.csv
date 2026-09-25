@@ -7,7 +7,7 @@ fact_date_orphans,FAIL,PASS,0,0,every fact_load_hour.date_key must exist in dim_
 fact_grain_unique,FAIL,PASS,110592,110592,"fact_load_hour must hold exactly one row per (ba_code, period_utc)"
 ba_day_hour_coverage,WARN,PASS,0,0,complete past BA-days should hold 23-25 hours (DST-aware); count of violations
 data_freshness_hours,WARN,PASS,1,6,newest actual demand hour should be within 6 hours of now
-forecast_coverage,WARN,PASS,505,5512,fewer than 5% of gradeable hours should be missing a day-ahead forecast
+forecast_coverage,WARN,PASS,505,5513,fewer than 5% of gradeable hours should be missing a day-ahead forecast
 mape_plausible,WARN,PASS,373,400,overall MAPE should fall in 0.2%-15% (value shown in basis points)
 no_demo_data,WARN,PASS,0,0,curated output must contain no synthetic rows before publication
 weather_join_coverage,WARN,PASS,0,2205,fewer than 2% of gradeable hours should be missing weather
