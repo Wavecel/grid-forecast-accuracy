@@ -1,6 +1,6 @@
 {
-  "generated_utc": "2026-10-09T02:10:19+00:00",
-  "latest_actual_hour_utc": "2026-10-09 01:00:00+00",
+  "generated_utc": "2026-10-09T09:05:12+00:00",
+  "latest_actual_hour_utc": "2026-10-09 08:00:00+00",
   "curated_row_counts": {
     "dim_ba": 6,
     "dim_date": 790,
