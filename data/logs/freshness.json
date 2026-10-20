@@ -1,13 +1,13 @@
 {
-  "generated_utc": "2026-10-20T10:08:36+00:00",
-  "latest_actual_hour_utc": "2026-10-20 09:00:00+00",
+  "generated_utc": "2026-10-20T15:08:48+00:00",
+  "latest_actual_hour_utc": "2026-10-20 14:00:00+00",
   "curated_row_counts": {
     "dim_ba": 6,
     "dim_date": 801,
     "dim_hour": 24,
     "dim_fuel": 8,
     "fact_load_hour": 114192,
-    "fact_fuel_mix": 861588,
+    "fact_fuel_mix": 862668,
     "agg_daily_brief": 4764,
     "dq_checks": 12
   }
