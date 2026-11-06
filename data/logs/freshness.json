@@ -1,6 +1,6 @@
 {
-  "generated_utc": "2026-11-06T15:05:40+00:00",
-  "latest_actual_hour_utc": "2026-11-06 14:00:00+00",
+  "generated_utc": "2026-11-06T20:59:12+00:00",
+  "latest_actual_hour_utc": "2026-11-06 20:00:00+00",
   "curated_row_counts": {
     "dim_ba": 6,
     "dim_date": 818,
