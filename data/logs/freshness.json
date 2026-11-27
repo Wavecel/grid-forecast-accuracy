@@ -1,14 +1,14 @@
 {
-  "generated_utc": "2026-11-25T12:46:21+00:00",
-  "latest_actual_hour_utc": "2026-11-25 11:00:00+00",
+  "generated_utc": "2026-11-27T18:16:10+00:00",
+  "latest_actual_hour_utc": "2026-11-27 17:00:00+00",
   "curated_row_counts": {
     "dim_ba": 6,
-    "dim_date": 837,
+    "dim_date": 839,
     "dim_hour": 24,
     "dim_fuel": 8,
-    "fact_load_hour": 119376,
-    "fact_fuel_mix": 901433,
-    "agg_daily_brief": 4980,
+    "fact_load_hour": 119664,
+    "fact_fuel_mix": 903593,
+    "agg_daily_brief": 4992,
     "dq_checks": 12
   }
 }
